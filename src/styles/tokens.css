@@ -1,0 +1,119 @@
+:root {
+  /* Pixel tokens from design-reference/onboarding stages PNGs */
+  --brand-primary: #e86339;
+  --brand-primary-hover: #d4552e;
+  --brand-primary-soft: #fff0eb;
+  --brand-primary-muted: rgba(232, 99, 57, 0.1);
+
+  --surface-page: #f9fafb;
+  --surface-card: #ffffff;
+  --surface-sidebar: #f9fafb;
+  --surface-table-head: #fce8e0;
+  --surface-user-type: #f3f4f6;
+
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --text-label: #374151;
+  --text-on-brand: #ffffff;
+
+  --border-subtle: #e5e7eb;
+  --border-input: #e5e7eb;
+  --border-strong: #d1d5db;
+
+  --success: #16a34a;
+  --success-soft: #e6f7ee;
+  --danger: #dc2626;
+  --danger-soft: #fdecea;
+  --warning: #b86e00;
+  --warning-soft: #fff4e0;
+  --neutral-badge: #6b7280;
+  --neutral-badge-soft: #f3f4f6;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
+  --shadow-md: 0 8px 24px rgba(17, 24, 39, 0.06);
+
+  --sidebar-width: 228px;
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter", "Segoe UI", system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration: 280ms;
+
+  --input-height: 40px;
+  --btn-height: 40px;
+  --hub-title-size: 22px;
+  --hub-body-size: 13px;
+  --hub-label-size: 12px;
+  --form-max: 540px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+[role="button"],
+a.cta,
+.cta {
+  cursor: pointer;
+}
+
+button:disabled,
+.cta:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--brand-primary-soft);
+}
