@@ -58,6 +58,8 @@ export function slugForBankId(bankId: string): string {
 export function tenantAppOrigin(bankId: string): string | null {
   const tenant = resolveTenantFromHost();
   if (tenant.isLocalhost) return null;
+  // Stay on current host during frontend-only demo (e.g. Vercel).
+  if (env.demoMode) return null;
   const slug = slugForBankId(bankId);
   const proto = window.location.protocol;
   return `${proto}//${slug}.${env.appBaseDomain}`;

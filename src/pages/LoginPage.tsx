@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../auth/AuthContext";
+import { env } from "../config/env";
 import "./LoginPage.css";
 
 export function LoginPage() {
@@ -70,6 +71,11 @@ export function LoginPage() {
         <form className="login-form login-card" onSubmit={(e) => void onSubmit(e)}>
           <h2>Log In</h2>
           <p className="login-sub">Enter your credentials to access your account · {tenant.slug}</p>
+          {env.demoMode ? (
+            <p className="login-sub" style={{ marginTop: 4, opacity: 0.85 }}>
+              Demo mode — any email/password works (no backend).
+            </p>
+          ) : null}
 
           {error ? <div className="alert-error">{error}</div> : null}
 

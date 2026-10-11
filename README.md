@@ -25,6 +25,8 @@ npm run dev
 
 Open http://localhost:5173 — **all design-reference modules are routed** in the unified sidebar (customer ops, branch/cash, GL, contracts, reports, IAM, branding).
 
+Vite proxies `/api` and `/realms` to the nginx gateway (`http://localhost:8080`), so login works without browser CORS issues. Keep `VITE_API_BASE_URL` empty in `.env.local` for local dev.
+
 Live API wiring today: login, customer list/create/detail, IAM users/roles catalog, workflow approvals. Other list screens match Figma layouts and call through the gateway as you deepen each module.
 
 ## Design reference

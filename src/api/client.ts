@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import { ensureAccessToken } from "../auth/session";
+import { demoApiRequest } from "../demo/demoApi";
 
 export class ApiError extends Error {
   status: number;
@@ -40,6 +41,10 @@ function toApiError(status: number, payload: unknown): ApiError {
 
 /** All staff API calls go through the nginx gateway (`env.apiBaseUrl`). */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (env.demoMode) {
+    return demoApiRequest<T>(path, { method: options.method, body: options.body });
+  }
+
   const { body, auth = true, headers, ...rest } = options;
   const url = `${env.apiBaseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
 

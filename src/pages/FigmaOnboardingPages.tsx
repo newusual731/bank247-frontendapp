@@ -2100,8 +2100,6 @@ export function VaultViewPage() {
 
   const fields: [string, string][] = [
     ["Branch Code", vault?.branchCode || "—"],
-import { EXAMPLE_NUBAN } from "../lib/nuban";
-...
     ["Account Number", vault?.ledgerAccountNumber || EXAMPLE_NUBAN],
     ["Currency", vault?.currency === "NGN" ? "Naira" : vault?.currency || "—"],
     ["Insurance Limit", "—"],

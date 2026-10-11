@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { listLedgerEntries, type LedgerEntry } from "../api/ledger";
 import { formatMoney } from "../lib/statusTone";
-import { EXAMPLE_NUBAN } from "../lib/nuban";
 import "../components/figma/FigmaForm.css";
 
 const DEMO_ROWS = [

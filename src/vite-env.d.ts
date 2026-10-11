@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_OIDC_CLIENT_ID: string;
   readonly VITE_APP_BASE_DOMAIN: string;
   readonly VITE_DEFAULT_TENANT_SLUG: string;
+  readonly VITE_DEMO_MODE: string;
 }
 
 interface ImportMeta {

@@ -6,7 +6,6 @@ import { createGlAccount, reverseLedgerPosting } from "../api/ledger";
 import { openAccount, createCasaProduct } from "../api/accounts";
 import { createLoan } from "../api/loans";
 import { Button, PageHeader, TextField } from "../components/ui";
-import { NUBAN_LENGTH, NUBAN_PLACEHOLDER, sanitizeNubanInput } from "../lib/nuban";
 
 function useFormState() {
   const navigate = useNavigate();

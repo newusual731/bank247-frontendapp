@@ -1,3 +1,6 @@
+import { env } from "../config/env";
+import { buildDemoTokens, isDemoMode } from "../demo/demoAuth";
+
 const STORAGE_KEY = "bank247.auth.v1";
 
 export type AuthTokens = {
@@ -158,6 +161,11 @@ export async function ensureAccessToken(
   const tokens = loadTokens();
   if (!tokens?.accessToken) return null;
 
+  // Demo sessions never call Keycloak — keep the unsigned JWT as-is.
+  if (isDemoMode() || env.demoMode) {
+    return tokens.accessToken;
+  }
+
   if (!options.forceRefresh && accessStillFresh(tokens)) {
     return tokens.accessToken;
   }
@@ -228,6 +236,13 @@ export async function loginWithPassword(
   username: string,
   password: string,
 ): Promise<AuthTokens> {
+  if (isDemoMode() || env.demoMode) {
+    void password;
+    const tokens = buildDemoTokens(username);
+    saveTokens(tokens);
+    return tokens;
+  }
+
   const body = new URLSearchParams({
     grant_type: "password",
     client_id: clientId,
