@@ -23,8 +23,7 @@ import "./LoginPage.css";
 
 const TABS = [
   { id: "INDIVIDUAL", label: "Individual" },
-  { id: "MINOR", label: "Minor - Individual" },
-  { id: "CORPORATE", label: "Non-Individual" },
+  { id: "CORPORATE", label: "Corporate" },
   { id: "INTERNAL", label: "Internal Record" },
   { id: "GOVERNMENT", label: "Government Record" },
 ] as const;
@@ -97,7 +96,7 @@ function useCustomerSearch(opts: {
       try {
         const apiType =
           opts.filterByTab && opts.tab
-            ? opts.tab === "INDIVIDUAL" || opts.tab === "MINOR"
+            ? opts.tab === "INDIVIDUAL"
               ? "INDIVIDUAL"
               : "CORPORATE"
             : undefined;
@@ -180,7 +179,7 @@ function CustomerTopTable({
                   <Link to={`/customers/${c.id}`}>{c.cifNumber || c.id.slice(0, 8)}</Link>
                 </td>
                 <td>{c.branchCode}</td>
-                <td>{c.type === "INDIVIDUAL" ? "Individual" : "Non-Individual"}</td>
+                <td>{c.type === "INDIVIDUAL" ? "Individual" : "Corporate"}</td>
                 <td>{customerLabel(c)}</td>
                 <td>
                   <span className={`fg-badge ${statusClass(c.status)}`}>
@@ -826,7 +825,7 @@ export function MemoManagementPage() {
               <tr>
                 <td>{customer.cifNumber || customer.id.slice(0, 8)}</td>
                 <td>{customer.branchCode}</td>
-                <td>{customer.type === "INDIVIDUAL" ? "Individual" : "Non-Individual"}</td>
+                <td>{customer.type === "INDIVIDUAL" ? "Individual" : "Corporate"}</td>
                 <td>{name}</td>
                 <td>
                   <span className={`fg-badge ${customer.status === "ACTIVE" ? "ok" : "neutral"}`}>

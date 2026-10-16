@@ -18,8 +18,15 @@ export function buildDemoAccessToken(username: string): string {
     email: `${(username || "demo").replace(/\s+/g, ".")}@demo.bank247.com`,
     name: "Demo User",
     bank_id: DEMO_BANK_ID,
-    // Empty → AuthContext hasPermission treats as allow-all
-    bank247_permissions: [],
+    // Role-shaped demo claims (no customer.identity.override → KYC prefill stays locked)
+    bank247_permissions: [
+      "customer.read",
+      "customer.write",
+      "customer.approve",
+      "ledger.post",
+      "iam.user.write",
+      "teller.cash",
+    ],
     bank247_roles: ["DEMO_ADMIN", "BRANCH_MANAGER"],
     exp: now + 60 * 60 * 24 * 14,
     iat: now,

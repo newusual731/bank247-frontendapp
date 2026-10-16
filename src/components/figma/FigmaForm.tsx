@@ -47,13 +47,15 @@ export function FigmaPhone({
   value,
   onChange,
   placeholder = "*****",
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
-    <div className="fg-phone">
+    <div className={`fg-phone${disabled ? " is-locked" : ""}`}>
       <span className="fg-phone-prefix" aria-hidden>
         🇳🇬 +234 ▾
       </span>
@@ -62,6 +64,7 @@ export function FigmaPhone({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         inputMode="tel"
+        disabled={disabled}
       />
     </div>
   );

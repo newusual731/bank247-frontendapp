@@ -3,6 +3,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { createIndividualCustomer } from "../api/customersCreate";
 import {
+  verifyBvn,
+  verifyNin,
+  type IdentityProfile,
+  type IdentityVerifyResponse,
+} from "../api/identityVerify";
+import { useAuth } from "../auth/AuthContext";
+import {
   AddCustomerChrome,
   FigmaActions,
   FigmaDate,
@@ -25,6 +32,10 @@ import {
   TITLE_OPTS,
   type FigmaStep,
 } from "../components/figma/FigmaForm";
+import { COUNTRY_OPTS, OTHER_COUNTRY, statesForCountry } from "../lib/geo";
+
+/** Catalog permission: edit fields prefilled from BVN/NIN identity verify. */
+const IDENTITY_OVERRIDE = "customer.identity.override";
 
 const INDIVIDUAL_STEPS: FigmaStep[] = [
   { id: "personal", label: "Personal" },
@@ -33,6 +44,7 @@ const INDIVIDUAL_STEPS: FigmaStep[] = [
   { id: "employment", label: "Employment" },
   { id: "nok", label: "Next Of Kin" },
   { id: "others", label: "Others" },
+  { id: "documents", label: "Document Capture" },
   { id: "cif", label: "CIF Data" },
 ];
 
@@ -43,9 +55,99 @@ const MINOR_STEPS: FigmaStep[] = [
   { id: "employment", label: "Employment" },
   { id: "nok", label: "Next of Kin" },
   { id: "others", label: "Others" },
+  { id: "documents", label: "Document Capture" },
+];
+
+const CUSTOMER_CATEGORY_OPTS = [
+  "",
+  "Individual Customer",
+  "Youth Corper",
+  "Salary Customer",
+  "Minor",
+  "Student",
+  "Not For Profit",
+  "Joint Customers",
+];
+
+const OPERATING_INSTRUCTION_OPTS = [
+  "Any one to sign",
+  "All signatories to sign",
+  "Either A or B",
+  "A and B jointly",
+  "Guardian only",
+  "Parent / Guardian with minor",
+];
+
+const OTHER_DOC_TYPE_OPTS = [
+  "",
+  "NEPA Bill",
+  "Utility Bill",
+  "Affidavit",
+  "ID Card",
+  "Passport",
+  "Birth Certificate",
+  "Other",
 ];
 
 type Form = Record<string, string>;
+
+type OtherDocRow = {
+  id: string;
+  docType: string;
+  fileName: string;
+  file: File | null;
+};
+
+function newOtherDocRow(): OtherDocRow {
+  return {
+    id: `doc-${Math.random().toString(36).slice(2, 9)}`,
+    docType: "",
+    fileName: "",
+    file: null,
+  };
+}
+
+function DocCaptureUpload({
+  label,
+  hint,
+  accept,
+  fileName,
+  onFile,
+}: {
+  label: string;
+  hint: string;
+  accept: string;
+  fileName: string;
+  onFile: (file: File | null) => void;
+}) {
+  return (
+    <FigmaField label={label}>
+      <div className="fg-mandate-upload">
+        <label className="fg-mandate-upload-circle cta">
+          <input
+            type="file"
+            accept={accept}
+            hidden
+            onChange={(e) => onFile(e.target.files?.[0] || null)}
+          />
+          <span className="fg-mandate-upload-cam" aria-hidden>
+            ↑
+          </span>
+          <span>{fileName ? "Replace" : "Upload"}</span>
+        </label>
+        <div className="fg-mandate-upload-meta">
+          <div>{fileName ? <strong>{fileName}</strong> : hint}</div>
+          <div>JPG, JPEG, PNG, PDF · Max 2MB</div>
+          {fileName ? (
+            <button type="button" className="fg-btn-link cta" onClick={() => onFile(null)}>
+              Remove
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </FigmaField>
+  );
+}
 
 const initial: Form = {
   userType: "Individual Customer",
@@ -66,10 +168,13 @@ const initial: Form = {
   bvnValidationDate: "",
   nin: "",
   ninValidationDate: "",
+  customerCategory: "",
   streetNumber: "",
   streetName: "",
   city: "",
   landmark: "",
+  country: "Nigeria",
+  countryOther: "",
   state: "Lagos",
   mobile1: "",
   mobile2: "",
@@ -112,6 +217,7 @@ const initial: Form = {
   introducer: "",
   pep: "No",
   pepDescription: "",
+  riskRating: "",
   origin: "",
   accountOfficerCode: "",
   cifNumber: "",
@@ -141,37 +247,165 @@ function opts(list: string[]) {
   ));
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function profileToFormPatch(profile: IdentityProfile, kind: "BVN" | "NIN"): Partial<Form> {
+  const validated = profile.validatedAt?.slice(0, 10) || todayIsoDate();
+  return {
+    title: profile.title || "",
+    surname: profile.firstName || "",
+    middleName: profile.middleName || "",
+    lastName: profile.lastName || "",
+    dateOfBirth: profile.dateOfBirth?.slice(0, 10) || "",
+    gender: profile.gender || "",
+    maritalStatus: profile.maritalStatus || "",
+    nationality: profile.nationality || "Nigerian",
+    stateOfOrigin: profile.stateOfOrigin || "",
+    lgaOfOrigin: profile.lgaOfOrigin || "",
+    stateOfOrigin2: profile.stateOfOrigin || "",
+    mobile1: profile.phoneNumber || "",
+    email: profile.email || "",
+    ...(kind === "BVN" ? { bvnValidationDate: validated } : { ninValidationDate: validated }),
+  };
+}
+
+function lockedKeysFromPatch(patch: Partial<Form>): string[] {
+  return Object.entries(patch)
+    .filter(([, v]) => typeof v === "string" && v.trim() !== "")
+    .map(([k]) => k);
+}
+
 export function CustomerCreatePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { user } = useAuth();
+  // Explicit grant only — empty demo "allow-all" must not unlock KYC-prefilled fields
+  const canOverrideIdentity = Boolean(user?.permissions.includes(IDENTITY_OVERRIDE));
   const isMinor = params.get("variant") === "minor";
   const steps = isMinor ? MINOR_STEPS : INDIVIDUAL_STEPS;
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Form>({
     ...initial,
-    userType: isMinor ? "Minor -Individual Customer" : "Individual Customer",
+    userType: "Individual Customer",
   });
+  const [lockedFields, setLockedFields] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [identityMsg, setIdentityMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState<"bvn" | "nin" | null>(null);
   const [success, setSuccess] = useState<{ id: string; cif?: string } | null>(null);
+  const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [operatingInstructions, setOperatingInstructions] = useState<string[]>([]);
+  const [customInstruction, setCustomInstruction] = useState("");
+  const [otherDocs, setOtherDocs] = useState<OtherDocRow[]>(() => [newOtherDocRow()]);
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
+  const contactStates = useMemo(() => statesForCountry(form.country), [form.country]);
+  const isOtherCountry = form.country === OTHER_COUNTRY;
+  const documentsStepIndex = steps.findIndex((s) => s.id === "documents");
+  const cifStepIndex = steps.findIndex((s) => s.id === "cif");
+
+  function toggleOperatingInstruction(value: string) {
+    setOperatingInstructions((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  }
+
+  function addCustomInstruction() {
+    const v = customInstruction.trim();
+    if (!v) return;
+    setOperatingInstructions((prev) => (prev.includes(v) ? prev : [...prev, v]));
+    setCustomInstruction("");
+  }
+
+  function updateOtherDoc(id: string, patch: Partial<OtherDocRow>) {
+    setOtherDocs((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function removeOtherDoc(id: string) {
+    setOtherDocs((rows) => (rows.length <= 1 ? [newOtherDocRow()] : rows.filter((r) => r.id !== id)));
+  }
+
+  function onCountryChange(value: string) {
+    setForm((f) => ({
+      ...f,
+      country: value,
+      countryOther: value === OTHER_COUNTRY ? f.countryOther : "",
+      state: "",
+    }));
+  }
+
+  function isLocked(key: string) {
+    return lockedFields.has(key) && !canOverrideIdentity;
+  }
+
+  function applyIdentity(result: IdentityVerifyResponse) {
+    const patch = profileToFormPatch(result.profile, result.source);
+    const keys = lockedKeysFromPatch(patch);
+    setForm((f) => ({ ...f, ...patch }));
+    setLockedFields((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) next.add(k);
+      return next;
+    });
+    setIdentityMsg(
+      result.source === "BVN"
+        ? "BVN verified with NIBSS. Personal details were prefilled and locked."
+        : "NIN verified. Personal details were prefilled and locked.",
+    );
+    setError(null);
+  }
+
+  async function onVerifyBvn() {
+    const bvn = form.bvn.replace(/\D/g, "");
+    if (!/^\d{11}$/.test(bvn)) {
+      setError("Enter a valid 11-digit BVN");
+      return;
+    }
+    setVerifying("bvn");
+    setError(null);
+    setIdentityMsg(null);
+    try {
+      set("bvn", bvn);
+      applyIdentity(await verifyBvn(bvn));
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : "BVN verification failed");
+    } finally {
+      setVerifying(null);
+    }
+  }
+
+  async function onVerifyNin() {
+    const nin = form.nin.replace(/\D/g, "");
+    if (!/^\d{11}$/.test(nin)) {
+      setError("Enter a valid 11-digit NIN");
+      return;
+    }
+    setVerifying("nin");
+    setError(null);
+    setIdentityMsg(null);
+    try {
+      set("nin", nin);
+      applyIdentity(await verifyNin(nin));
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : "NIN verification failed");
+    } finally {
+      setVerifying(null);
+    }
+  }
+
   const userTypeChoices = useMemo(
-    () => [
-      "Individual Customer",
-      "Minor -Individual Customer",
-      "Non - Individual Customer",
-      "Internal Record",
-      "Government Record",
-    ],
+    () => ["Individual Customer", "Corporate", "Internal Record", "Government Record"],
     [],
   );
 
   function onUserTypeChange(value: string) {
     set("userType", value);
-    if (value.startsWith("Minor")) navigate("/customers/new?variant=minor");
-    else if (value.includes("Non")) navigate("/customers/new/corporate");
+    if (value === "Corporate") navigate("/customers/new/corporate");
     else if (value.includes("Government")) navigate("/customers/new/corporate?variant=government");
     else if (value.includes("Internal")) navigate("/customers/new/corporate?variant=internal");
     else navigate("/customers/new");
@@ -247,50 +481,180 @@ export function CustomerCreatePage() {
             </div>
 
             <FigmaField label="Title (Optional)">
-              <FigmaSelect value={form.title} onChange={(e) => set("title", e.target.value)}>
+              <FigmaSelect
+                value={form.title}
+                onChange={(e) => set("title", e.target.value)}
+                disabled={isLocked("title")}
+              >
                 {opts(TITLE_OPTS)}
               </FigmaSelect>
             </FigmaField>
+
+            <FigmaField label="BVN (Bank Verification Number)">
+              <div className="fg-identity-row">
+                <FigmaInput
+                  placeholder="Enter 11-digit BVN"
+                  value={form.bvn}
+                  onChange={(e) => set("bvn", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                  maxLength={11}
+                  inputMode="numeric"
+                />
+                <button
+                  type="button"
+                  className="fg-btn fg-btn-outline cta"
+                  onClick={() => void onVerifyBvn()}
+                  disabled={verifying !== null || busy}
+                >
+                  {verifying === "bvn" ? "Validating…" : "Validate"}
+                </button>
+              </div>
+            </FigmaField>
+
+            <FigmaField label="NIN (National Identification Number)">
+              <div className="fg-identity-row">
+                <FigmaInput
+                  placeholder="Enter 11-digit NIN"
+                  value={form.nin}
+                  onChange={(e) => set("nin", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                  maxLength={11}
+                  inputMode="numeric"
+                />
+                <button
+                  type="button"
+                  className="fg-btn fg-btn-outline cta"
+                  onClick={() => void onVerifyNin()}
+                  disabled={verifying !== null || busy}
+                >
+                  {verifying === "nin" ? "Validating…" : "Validate"}
+                </button>
+              </div>
+            </FigmaField>
+
+            {(form.bvnValidationDate || form.ninValidationDate) && (
+              <FigmaRow>
+                {form.bvnValidationDate ? (
+                  <FigmaField label="BVN validation Date">
+                    <FigmaDate
+                      value={form.bvnValidationDate}
+                      onChange={(e) => set("bvnValidationDate", e.target.value)}
+                      disabled={isLocked("bvnValidationDate")}
+                    />
+                  </FigmaField>
+                ) : (
+                  <div />
+                )}
+                {form.ninValidationDate ? (
+                  <FigmaField label="NIN validation Date">
+                    <FigmaDate
+                      value={form.ninValidationDate}
+                      onChange={(e) => set("ninValidationDate", e.target.value)}
+                      disabled={isLocked("ninValidationDate")}
+                    />
+                  </FigmaField>
+                ) : (
+                  <div />
+                )}
+              </FigmaRow>
+            )}
+
+            <FigmaField label="Customer Category">
+              <FigmaSelect
+                value={form.customerCategory}
+                onChange={(e) => set("customerCategory", e.target.value)}
+              >
+                {opts(CUSTOMER_CATEGORY_OPTS)}
+              </FigmaSelect>
+            </FigmaField>
+
+            {identityMsg ? <p className="fg-identity-ok">{identityMsg}</p> : null}
+            {lockedFields.size > 0 && !canOverrideIdentity ? (
+              <p className="fg-identity-hint">
+                Prefilled fields are read-only. Staff with <code>customer.identity.override</code> can edit them.
+              </p>
+            ) : null}
+
             {isMinor ? (
               <FigmaRow>
                 <FigmaField label="Surname">
-                  <FigmaInput placeholder="Enter Surname" value={form.surname} onChange={(e) => set("surname", e.target.value)} />
+                  <FigmaInput
+                    placeholder="Enter Surname"
+                    value={form.surname}
+                    onChange={(e) => set("surname", e.target.value)}
+                    disabled={isLocked("surname")}
+                  />
                 </FigmaField>
                 <FigmaField label="Middle name">
-                  <FigmaInput placeholder="Enter Middle Name" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
+                  <FigmaInput
+                    placeholder="Enter Middle Name"
+                    value={form.middleName}
+                    onChange={(e) => set("middleName", e.target.value)}
+                    disabled={isLocked("middleName")}
+                  />
                 </FigmaField>
               </FigmaRow>
             ) : (
               <>
                 <FigmaField label="Surname">
-                  <FigmaInput placeholder="Enter Surname" value={form.surname} onChange={(e) => set("surname", e.target.value)} />
+                  <FigmaInput
+                    placeholder="Enter Surname"
+                    value={form.surname}
+                    onChange={(e) => set("surname", e.target.value)}
+                    disabled={isLocked("surname")}
+                  />
                 </FigmaField>
                 <FigmaField label="Middle name">
-                  <FigmaInput placeholder="Enter Middle Name" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
+                  <FigmaInput
+                    placeholder="Enter Middle Name"
+                    value={form.middleName}
+                    onChange={(e) => set("middleName", e.target.value)}
+                    disabled={isLocked("middleName")}
+                  />
                 </FigmaField>
               </>
             )}
             {isMinor ? (
               <FigmaRow>
                 <FigmaField label="Last Name">
-                  <FigmaInput placeholder="Enter Last Name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
+                  <FigmaInput
+                    placeholder="Enter Last Name"
+                    value={form.lastName}
+                    onChange={(e) => set("lastName", e.target.value)}
+                    disabled={isLocked("lastName")}
+                  />
                 </FigmaField>
                 <FigmaField label="Date of Birth">
-                  <FigmaDate value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} />
+                  <FigmaDate
+                    value={form.dateOfBirth}
+                    onChange={(e) => set("dateOfBirth", e.target.value)}
+                    disabled={isLocked("dateOfBirth")}
+                  />
                 </FigmaField>
               </FigmaRow>
             ) : (
               <FigmaField label="Last name">
-                <FigmaInput placeholder="Enter Last Name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
+                <FigmaInput
+                  placeholder="Enter Last Name"
+                  value={form.lastName}
+                  onChange={(e) => set("lastName", e.target.value)}
+                  disabled={isLocked("lastName")}
+                />
               </FigmaField>
             )}
             {!isMinor ? (
               <FigmaRow>
                 <FigmaField label="Date of Birth">
-                  <FigmaDate value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} />
+                  <FigmaDate
+                    value={form.dateOfBirth}
+                    onChange={(e) => set("dateOfBirth", e.target.value)}
+                    disabled={isLocked("dateOfBirth")}
+                  />
                 </FigmaField>
                 <FigmaField label="Gender">
-                  <FigmaSelect value={form.gender} onChange={(e) => set("gender", e.target.value)}>
+                  <FigmaSelect
+                    value={form.gender}
+                    onChange={(e) => set("gender", e.target.value)}
+                    disabled={isLocked("gender")}
+                  >
                     {opts(GENDER_OPTS)}
                   </FigmaSelect>
                 </FigmaField>
@@ -298,12 +662,20 @@ export function CustomerCreatePage() {
             ) : (
               <FigmaRow>
                 <FigmaField label="Gender">
-                  <FigmaSelect value={form.gender} onChange={(e) => set("gender", e.target.value)}>
+                  <FigmaSelect
+                    value={form.gender}
+                    onChange={(e) => set("gender", e.target.value)}
+                    disabled={isLocked("gender")}
+                  >
                     {opts(GENDER_OPTS)}
                   </FigmaSelect>
                 </FigmaField>
                 <FigmaField label="Martial Status">
-                  <FigmaSelect value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)}>
+                  <FigmaSelect
+                    value={form.maritalStatus}
+                    onChange={(e) => set("maritalStatus", e.target.value)}
+                    disabled={isLocked("maritalStatus")}
+                  >
                     {opts(MARITAL_OPTS)}
                   </FigmaSelect>
                 </FigmaField>
@@ -311,7 +683,11 @@ export function CustomerCreatePage() {
             )}
             <FigmaRow>
               <FigmaField label="Marital Status">
-                <FigmaSelect value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)}>
+                <FigmaSelect
+                  value={form.maritalStatus}
+                  onChange={(e) => set("maritalStatus", e.target.value)}
+                  disabled={isLocked("maritalStatus")}
+                >
                   {opts(MARITAL_OPTS)}
                 </FigmaSelect>
               </FigmaField>
@@ -323,91 +699,124 @@ export function CustomerCreatePage() {
             </FigmaRow>
             <FigmaRow>
               <FigmaField label="Nationality">
-                <FigmaSelect value={form.nationality} onChange={(e) => set("nationality", e.target.value)}>
+                <FigmaSelect
+                  value={form.nationality}
+                  onChange={(e) => set("nationality", e.target.value)}
+                  disabled={isLocked("nationality")}
+                >
                   <option value="Nigerian">Nigerian</option>
                   <option value="Other">Other</option>
                 </FigmaSelect>
               </FigmaField>
               <FigmaField label="State Of Origin">
-                <FigmaSelect value={form.stateOfOrigin} onChange={(e) => set("stateOfOrigin", e.target.value)}>
+                <FigmaSelect
+                  value={form.stateOfOrigin}
+                  onChange={(e) => set("stateOfOrigin", e.target.value)}
+                  disabled={isLocked("stateOfOrigin")}
+                >
                   {opts(STATE_OPTS)}
                 </FigmaSelect>
               </FigmaField>
             </FigmaRow>
             <FigmaRow>
               <FigmaField label="LGA of Origin">
-                <FigmaInput placeholder="Enter LGA" value={form.lgaOfOrigin} onChange={(e) => set("lgaOfOrigin", e.target.value)} />
+                <FigmaInput
+                  placeholder="Enter LGA"
+                  value={form.lgaOfOrigin}
+                  onChange={(e) => set("lgaOfOrigin", e.target.value)}
+                  disabled={isLocked("lgaOfOrigin")}
+                />
               </FigmaField>
               <FigmaField label="State Of Origin">
-                <FigmaSelect value={form.stateOfOrigin2} onChange={(e) => set("stateOfOrigin2", e.target.value)}>
+                <FigmaSelect
+                  value={form.stateOfOrigin2}
+                  onChange={(e) => set("stateOfOrigin2", e.target.value)}
+                  disabled={isLocked("stateOfOrigin2")}
+                >
                   {opts(STATE_OPTS)}
                 </FigmaSelect>
               </FigmaField>
             </FigmaRow>
-            <FigmaRow>
-              <FigmaField label="Residence Permit Number">
-                <FigmaInput placeholder="Enter Number" value={form.residencePermit} onChange={(e) => set("residencePermit", e.target.value)} />
-              </FigmaField>
-              <FigmaField label="BVN (Bank Verification Number)">
-                <FigmaInput placeholder="Enter Number" value={form.bvn} onChange={(e) => set("bvn", e.target.value)} maxLength={11} />
-              </FigmaField>
-            </FigmaRow>
-            {isMinor ? (
-              <FigmaRow>
-                <FigmaField label="BVN validation Date">
-                  <FigmaDate value={form.bvnValidationDate} onChange={(e) => set("bvnValidationDate", e.target.value)} />
-                </FigmaField>
-                <FigmaField label="NIN (National Identification Number)">
-                  <FigmaInput placeholder="Enter Number" value={form.nin} onChange={(e) => set("nin", e.target.value)} maxLength={11} />
-                </FigmaField>
-              </FigmaRow>
-            ) : (
-              <>
-                <FigmaField label="BVN validation Date">
-                  <FigmaDate value={form.bvnValidationDate} onChange={(e) => set("bvnValidationDate", e.target.value)} />
-                </FigmaField>
-                <FigmaRow>
-                  <FigmaField label="NIN (National Identification Number)">
-                    <FigmaInput placeholder="Enter Number" value={form.nin} onChange={(e) => set("nin", e.target.value)} maxLength={11} />
-                  </FigmaField>
-                  <FigmaField label="NIN validation Date">
-                    <FigmaDate value={form.ninValidationDate} onChange={(e) => set("ninValidationDate", e.target.value)} />
-                  </FigmaField>
-                </FigmaRow>
-              </>
-            )}
-            {isMinor ? (
-              <FigmaField label="NIN validation Date">
-                <FigmaDate value={form.ninValidationDate} onChange={(e) => set("ninValidationDate", e.target.value)} />
-              </FigmaField>
-            ) : null}
+            <FigmaField label="Residence Permit Number">
+              <FigmaInput
+                placeholder="Enter Number"
+                value={form.residencePermit}
+                onChange={(e) => set("residencePermit", e.target.value)}
+              />
+            </FigmaField>
           </>
         ) : null}
 
         {step === 1 ? (
           <>
             <FigmaField label="Street Number">
-              <FigmaInput placeholder="Enter Number" value={form.streetNumber} onChange={(e) => set("streetNumber", e.target.value)} />
+              <FigmaInput
+                placeholder="Enter Number"
+                value={form.streetNumber}
+                onChange={(e) => set("streetNumber", e.target.value)}
+              />
             </FigmaField>
             <FigmaField label="Street Name">
-              <FigmaInput placeholder="Enter Name" value={form.streetName} onChange={(e) => set("streetName", e.target.value)} />
+              <FigmaInput
+                placeholder="Enter Name"
+                value={form.streetName}
+                onChange={(e) => set("streetName", e.target.value)}
+              />
             </FigmaField>
             <FigmaField label="City/Town">
-              <FigmaInput placeholder="Enter City/Town" value={form.city} onChange={(e) => set("city", e.target.value)} />
+              <FigmaInput
+                placeholder="Enter City/Town"
+                value={form.city}
+                onChange={(e) => set("city", e.target.value)}
+              />
+            </FigmaField>
+            <FigmaField label="Landmark">
+              <FigmaInput placeholder="Enter landmark" value={form.landmark} onChange={(e) => set("landmark", e.target.value)} />
+            </FigmaField>
+            <FigmaField label="Country">
+              <FigmaSelect value={form.country} onChange={(e) => onCountryChange(e.target.value)}>
+                {COUNTRY_OPTS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </FigmaSelect>
+            </FigmaField>
+            {isOtherCountry ? (
+              <FigmaField label="Country name">
+                <FigmaInput
+                  placeholder="Type country name"
+                  value={form.countryOther}
+                  onChange={(e) => set("countryOther", e.target.value)}
+                />
+              </FigmaField>
+            ) : null}
+            <FigmaField label={contactStates ? "State" : "State / Province"}>
+              {contactStates ? (
+                <FigmaSelect value={form.state} onChange={(e) => set("state", e.target.value)}>
+                  <option value="">Select</option>
+                  {contactStates.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </FigmaSelect>
+              ) : (
+                <FigmaInput
+                  placeholder="Enter state or province"
+                  value={form.state}
+                  onChange={(e) => set("state", e.target.value)}
+                />
+              )}
             </FigmaField>
             <FigmaRow>
-              <FigmaField label="Landmark">
-                <FigmaInput placeholder="Enter landmark" value={form.landmark} onChange={(e) => set("landmark", e.target.value)} />
-              </FigmaField>
-              <FigmaField label="State">
-                <FigmaSelect value={form.state} onChange={(e) => set("state", e.target.value)}>
-                  {opts(STATE_OPTS)}
-                </FigmaSelect>
-              </FigmaField>
-            </FigmaRow>
-            <FigmaRow>
               <FigmaField label="Mobile Number 1">
-                <FigmaInput placeholder="Number" value={form.mobile1} onChange={(e) => set("mobile1", e.target.value)} />
+                <FigmaInput
+                  placeholder="Number"
+                  value={form.mobile1}
+                  onChange={(e) => set("mobile1", e.target.value)}
+                  disabled={isLocked("mobile1")}
+                />
               </FigmaField>
               <FigmaField label="Mobile Number 2">
                 <FigmaInput placeholder="Number" value={form.mobile2} onChange={(e) => set("mobile2", e.target.value)} />
@@ -417,7 +826,13 @@ export function CustomerCreatePage() {
               <FigmaPhone value={form.foreignNumber} onChange={(v) => set("foreignNumber", v)} />
             </FigmaField>
             <FigmaField label="Email Address">
-              <FigmaInput type="email" placeholder="Enter Email" value={form.email} onChange={(e) => set("email", e.target.value)} />
+              <FigmaInput
+                type="email"
+                placeholder="Enter Email"
+                value={form.email}
+                onChange={(e) => set("email", e.target.value)}
+                disabled={isLocked("email")}
+              />
             </FigmaField>
             <FigmaField label="Twitter">
               <FigmaInput placeholder="Enter Twitter Username" value={form.twitter} onChange={(e) => set("twitter", e.target.value)} />
@@ -616,6 +1031,11 @@ export function CustomerCreatePage() {
             <FigmaField label="PEP Description">
               <FigmaInput placeholder="Enter Description" value={form.pepDescription} onChange={(e) => set("pepDescription", e.target.value)} />
             </FigmaField>
+            <FigmaField label="Risk Rating">
+              <FigmaSelect value={form.riskRating} onChange={(e) => set("riskRating", e.target.value)}>
+                {opts(["", "High", "Low", "Medium"])}
+              </FigmaSelect>
+            </FigmaField>
             <FigmaRow>
               <FigmaField label="Origin">
                 <FigmaSelect value={form.origin} onChange={(e) => set("origin", e.target.value)}>
@@ -629,7 +1049,128 @@ export function CustomerCreatePage() {
           </>
         ) : null}
 
-        {step === 6 && !isMinor ? (
+        {step === documentsStepIndex && documentsStepIndex >= 0 ? (
+          <>
+            <p className="fg-identity-hint">
+              {isMinor
+                ? "Capture parent / guardian documents for this minor. The customer’s own documents can be uploaded later via Document upload when the account is upgraded."
+                : "Capture onboarding documents now. Additional documents can be uploaded later via Accounts ops → Document upload."}
+            </p>
+
+            <DocCaptureUpload
+              label={isMinor ? "Parent / Guardian Picture" : "Picture (face capture or passport)"}
+              hint={isMinor ? "Upload parent or guardian photo" : "Upload face photo or passport image"}
+              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+              fileName={pictureFile?.name || ""}
+              onFile={setPictureFile}
+            />
+
+            <DocCaptureUpload
+              label={isMinor ? "Parent / Guardian Signature" : "Signature (customer / scanned)"}
+              hint="Upload signature image or signed scanned signature"
+              accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+              fileName={signatureFile?.name || ""}
+              onFile={setSignatureFile}
+            />
+
+            <FigmaField label="Operating Instruction">
+              <div className="fg-instruction-list">
+                {OPERATING_INSTRUCTION_OPTS.map((opt) => (
+                  <label key={opt} className="fg-instruction-check">
+                    <input
+                      type="checkbox"
+                      checked={operatingInstructions.includes(opt)}
+                      onChange={() => toggleOperatingInstruction(opt)}
+                    />
+                    <span>{opt}</span>
+                  </label>
+                ))}
+              </div>
+              {operatingInstructions.length > 0 ? (
+                <div className="fg-instruction-chips">
+                  {operatingInstructions.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className="fg-instruction-chip cta"
+                      onClick={() => toggleOperatingInstruction(v)}
+                      title="Remove"
+                    >
+                      {v} ×
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="fg-identity-row" style={{ marginTop: 10 }}>
+                <FigmaInput
+                  placeholder="Add custom instruction"
+                  value={customInstruction}
+                  onChange={(e) => setCustomInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomInstruction();
+                    }
+                  }}
+                />
+                <button type="button" className="fg-btn fg-btn-outline cta" onClick={addCustomInstruction}>
+                  Add
+                </button>
+              </div>
+            </FigmaField>
+
+            <div className="fg-other-docs">
+              <h3 className="fg-other-docs-title">
+                {isMinor ? "Other parent documents" : "Other documents"}
+              </h3>
+              <p className="fg-identity-hint" style={{ marginTop: 0 }}>
+                Add NEPA bill, affidavit, and any other supporting documents.
+              </p>
+              {otherDocs.map((row) => (
+                <div key={row.id} className="fg-other-doc-row">
+                  <FigmaField label="Document Type">
+                    <FigmaSelect
+                      value={row.docType}
+                      onChange={(e) => updateOtherDoc(row.id, { docType: e.target.value })}
+                    >
+                      {opts(OTHER_DOC_TYPE_OPTS)}
+                    </FigmaSelect>
+                  </FigmaField>
+                  <FigmaField label="File">
+                    <label className="fg-other-doc-file cta">
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          updateOtherDoc(row.id, { file, fileName: file?.name || "" });
+                        }}
+                      />
+                      <span>{row.fileName || "Choose file"}</span>
+                    </label>
+                  </FigmaField>
+                  <button
+                    type="button"
+                    className="fg-btn fg-btn-ghost cta fg-other-doc-remove"
+                    onClick={() => removeOtherDoc(row.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="fg-btn fg-btn-outline cta"
+                onClick={() => setOtherDocs((rows) => [...rows, newOtherDocRow()])}
+              >
+                + Add document
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === cifStepIndex && cifStepIndex >= 0 && !isMinor ? (
           <>
             <FigmaRow>
               <FigmaField label="CIF Number">

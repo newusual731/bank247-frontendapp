@@ -8,8 +8,7 @@ import "../components/figma/FigmaForm.css";
 
 const TABS = [
   { id: "INDIVIDUAL", label: "Individual" },
-  { id: "MINOR", label: "Minor - Individual" },
-  { id: "CORPORATE", label: "Non-Individual" },
+  { id: "CORPORATE", label: "Corporate" },
   { id: "INTERNAL", label: "Internal Record" },
   { id: "GOVERNMENT", label: "Government Record" },
 ] as const;
@@ -46,7 +45,7 @@ export function CustomersPage() {
       setLoading(true);
       setError(null);
       try {
-        const apiType = tab === "INDIVIDUAL" || tab === "MINOR" ? "INDIVIDUAL" : "CORPORATE";
+        const apiType = tab === "INDIVIDUAL" ? "INDIVIDUAL" : "CORPORATE";
         const page = await searchCustomers({
           name: query.trim() || undefined,
           type: apiType,

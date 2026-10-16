@@ -217,6 +217,13 @@ const PERMISSIONS = [
   { id: "p2", code: "ledger.post", module: "ledger", action: "post", description: "Post ledger entries" },
   { id: "p3", code: "customer.read", module: "customer", action: "read", description: "View customers" },
   { id: "p4", code: "teller.cash", module: "teller", action: "cash", description: "Cash transactions" },
+  {
+    id: "p5",
+    code: "customer.identity.override",
+    module: "customer",
+    action: "override",
+    description: "Edit identity-prefilled customer fields after BVN/NIN verify",
+  },
 ];
 
 const PRODUCTS_CASA = [
@@ -350,6 +357,62 @@ export async function demoApiRequest<T>(
       status: "PENDING_APPROVAL",
       createdAt: nowIso(),
       kycStatus: "PENDING",
+    } as T;
+  }
+  if (method === "POST" && p === "/api/v1/customers/identity/bvn") {
+    const bvn = String(body.bvn || "").replace(/\D/g, "");
+    if (!/^\d{11}$/.test(bvn)) {
+      throw new Error("BVN must be 11 digits");
+    }
+    return {
+      source: "BVN",
+      reference: bvn,
+      profile: {
+        title: "Mr",
+        firstName: "Chinedu",
+        middleName: "Emeka",
+        lastName: "Okafor",
+        dateOfBirth: "1990-04-12",
+        gender: "Male",
+        maritalStatus: "Married",
+        nationality: "Nigerian",
+        stateOfOrigin: "Anambra",
+        lgaOfOrigin: "Awka South",
+        phoneNumber: "08031234567",
+        email: "chinedu.okafor@example.com",
+        addressLine1: "14 Admiralty Way",
+        city: "Lekki",
+        stateName: "Lagos",
+        validatedAt: nowIso().slice(0, 10),
+      },
+    } as T;
+  }
+  if (method === "POST" && p === "/api/v1/customers/identity/nin") {
+    const nin = String(body.nin || "").replace(/\D/g, "");
+    if (!/^\d{11}$/.test(nin)) {
+      throw new Error("NIN must be 11 digits");
+    }
+    return {
+      source: "NIN",
+      reference: nin,
+      profile: {
+        title: "Mr",
+        firstName: "Chinedu",
+        middleName: "Emeka",
+        lastName: "Okafor",
+        dateOfBirth: "1990-04-12",
+        gender: "Male",
+        maritalStatus: "Married",
+        nationality: "Nigerian",
+        stateOfOrigin: "Anambra",
+        lgaOfOrigin: "Awka South",
+        phoneNumber: "08031234567",
+        email: "chinedu.okafor@example.com",
+        addressLine1: "14 Admiralty Way",
+        city: "Lekki",
+        stateName: "Lagos",
+        validatedAt: nowIso().slice(0, 10),
+      },
     } as T;
   }
   if (method === "GET" && match(p, /^\/api\/v1\/customers\/([^/]+)\/mandates$/)) {

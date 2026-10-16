@@ -311,6 +311,57 @@
   padding-bottom: 8px;
 }
 
+.fg-identity-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.fg-identity-row .fg-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.fg-identity-row .fg-btn {
+  flex-shrink: 0;
+  min-width: 108px;
+}
+
+.fg-identity-ok {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+}
+
+.fg-identity-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.fg-identity-hint code {
+  font-size: 11px;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.fg-control:disabled,
+.fg-select-wrap select:disabled,
+.fg-date-wrap input:disabled,
+.fg-phone input:disabled {
+  background: #f3f4f6;
+  color: #4b5563;
+  cursor: not-allowed;
+}
+
+.fg-phone.is-locked {
+  opacity: 0.85;
+}
+
 .fg-btn {
   min-width: 110px;
   height: var(--btn-height, 40px);
@@ -645,6 +696,103 @@
   font-size: 13px;
   color: #6b7280;
   line-height: 1.55;
+}
+
+.fg-instruction-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-top: 4px;
+}
+
+.fg-instruction-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}
+
+.fg-instruction-check input {
+  margin-top: 2px;
+}
+
+.fg-instruction-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.fg-instruction-chip {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fg-instruction-chip:hover {
+  border-color: #e86339;
+  color: #e86339;
+}
+
+.fg-other-docs {
+  margin-top: 20px;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.fg-other-docs-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.fg-other-doc-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.fg-other-doc-file {
+  display: flex;
+  align-items: center;
+  min-height: var(--btn-height, 40px);
+  padding: 0 12px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.fg-other-doc-file:hover {
+  border-color: #e86339;
+  color: #e86339;
+}
+
+.fg-other-doc-remove {
+  min-width: auto;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 720px) {
+  .fg-instruction-list {
+    grid-template-columns: 1fr;
+  }
+
+  .fg-other-doc-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* —— Memo Management (Memo.png) —— */

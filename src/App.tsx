@@ -60,9 +60,13 @@ import {
 } from "./pages/OpsFlowPages";
 import {
   AddDirectorPage,
+  AddSignatoryPage,
+  AddStakeholderPage,
   CorporateCustomerCreatePage,
   CustomerTypeSelectPage,
   UpdateDirectorPage,
+  UpdateSignatoryPage,
+  UpdateStakeholderPage,
 } from "./pages/CustomerFlowPages";
 import {
   BlockFundsPage as LegacyBlockFundsPage,
@@ -170,6 +174,10 @@ export default function App() {
             <Route path="customers/new/corporate" element={<CorporateCustomerCreatePage />} />
             <Route path="customers/directors/new" element={<AddDirectorPage />} />
             <Route path="customers/directors/update" element={<UpdateDirectorPage />} />
+            <Route path="customers/stakeholders/new" element={<AddStakeholderPage />} />
+            <Route path="customers/stakeholders/update" element={<UpdateStakeholderPage />} />
+            <Route path="customers/signatories/new" element={<AddSignatoryPage />} />
+            <Route path="customers/signatories/update" element={<UpdateSignatoryPage />} />
             <Route path="customers/:id/modify" element={<ModifyCustomerPage />} />
             <Route path="mandates/new" element={<MandateCreatePage />} />
             <Route path="mandates/:id/update" element={<MandateUpdatePage />} />

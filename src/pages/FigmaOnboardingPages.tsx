@@ -58,7 +58,7 @@ function CustomerSummaryRow({ c }: { c: Customer | null }) {
     <tr>
       <td>{c.cifNumber || c.id.slice(0, 8)}</td>
       <td>{c.branchCode}</td>
-      <td>{c.type === "INDIVIDUAL" ? "Individual" : "Non-Individual"}</td>
+      <td>{c.type === "INDIVIDUAL" ? "Individual" : "Corporate"}</td>
       <td>{c.displayName}</td>
       <td>{statusBadge(c.status === "ACTIVE" ? "Active" : c.status, c.status === "ACTIVE" ? "ok" : "neutral")}</td>
       <td>{formatDate(c.createdAt)}</td>

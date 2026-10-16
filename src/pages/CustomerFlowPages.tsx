@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { createCorporateCustomer } from "../api/customersCreate";
@@ -29,6 +29,7 @@ const CORP_STEPS: FigmaStep[] = [
   { id: "company", label: "Company Details" },
   { id: "others", label: "Others" },
   { id: "info", label: "Information" },
+  { id: "documents", label: "Document Capture" },
   { id: "cif", label: "CIF Data" },
 ];
 
@@ -36,16 +37,85 @@ const GOV_STEPS: FigmaStep[] = [
   { id: "company", label: "Company Details" },
   { id: "others", label: "Others" },
   { id: "info", label: "Information (Many to 1)" },
+  { id: "documents", label: "Document Capture" },
   { id: "cif", label: "CIF Data" },
 ];
 
 const INTERNAL_STEPS: FigmaStep[] = [
   { id: "company", label: "Company Details" },
   { id: "others", label: "Others" },
+  { id: "documents", label: "Document Capture" },
   { id: "cif", label: "CIF Data" },
 ];
 
+const CORP_OPERATING_INSTRUCTION_OPTS = [
+  "Any one to sign",
+  "All signatories to sign",
+  "Either A or B",
+  "A and B jointly",
+  "Any two to sign",
+  "Board resolution required",
+];
+
 type Form = Record<string, string>;
+
+type CorpFileRow = {
+  id: string;
+  label: string;
+  fileName: string;
+  file: File | null;
+};
+
+function newCorpFileRow(label = ""): CorpFileRow {
+  return {
+    id: `cf-${Math.random().toString(36).slice(2, 9)}`,
+    label,
+    fileName: "",
+    file: null,
+  };
+}
+
+function CorpDocUpload({
+  label,
+  hint,
+  accept = ".jpg,.jpeg,.png,.pdf",
+  fileName,
+  onFile,
+}: {
+  label: string;
+  hint: string;
+  accept?: string;
+  fileName: string;
+  onFile: (file: File | null) => void;
+}) {
+  return (
+    <FigmaField label={label}>
+      <div className="fg-mandate-upload">
+        <label className="fg-mandate-upload-circle cta">
+          <input
+            type="file"
+            accept={accept}
+            hidden
+            onChange={(e) => onFile(e.target.files?.[0] || null)}
+          />
+          <span className="fg-mandate-upload-cam" aria-hidden>
+            ↑
+          </span>
+          <span>{fileName ? "Replace" : "Upload"}</span>
+        </label>
+        <div className="fg-mandate-upload-meta">
+          <div>{fileName ? <strong>{fileName}</strong> : hint}</div>
+          <div>JPG, JPEG, PNG, PDF · Max 2MB</div>
+          {fileName ? (
+            <button type="button" className="fg-btn-link cta" onClick={() => onFile(null)}>
+              Remove
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </FigmaField>
+  );
+}
 
 export type DirectorRecord = {
   id: string;
@@ -114,7 +184,7 @@ function opts(list: string[]) {
 function userTypeLabel(variant: string | null) {
   if (variant === "government") return "Government Record";
   if (variant === "internal") return "Internal Record";
-  return "Non - Individual Customer";
+  return "Corporate";
 }
 
 function DirectorFormFields({
@@ -188,13 +258,179 @@ function DirectorFormFields({
   );
 }
 
-function directorReturnPath(params: URLSearchParams) {
+function infoReturnPath(params: URLSearchParams) {
   const variant = params.get("variant");
   const base = "/customers/new/corporate";
   const q = new URLSearchParams();
   if (variant) q.set("variant", variant);
   q.set("step", "info");
   return `${base}?${q.toString()}`;
+}
+
+const directorReturnPath = infoReturnPath;
+
+export type StakeholderRecord = {
+  id: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  stakeholderType: string;
+  percentageHolding: string;
+  mobileNumber: string;
+  email: string;
+  nin: string;
+};
+
+const STAKEHOLDERS_STORAGE_KEY = "bank247.corporate.stakeholders";
+
+function emptyStakeholder(): Omit<StakeholderRecord, "id"> {
+  return {
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    stakeholderType: "",
+    percentageHolding: "",
+    mobileNumber: "",
+    email: "",
+    nin: "",
+  };
+}
+
+function loadStakeholders(): StakeholderRecord[] {
+  try {
+    const raw = sessionStorage.getItem(STAKEHOLDERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as StakeholderRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStakeholders(rows: StakeholderRecord[]) {
+  sessionStorage.setItem(STAKEHOLDERS_STORAGE_KEY, JSON.stringify(rows));
+}
+
+function StakeholderFormFields({
+  form,
+  set,
+}: {
+  form: Omit<StakeholderRecord, "id">;
+  set: (k: keyof Omit<StakeholderRecord, "id">, v: string) => void;
+}) {
+  return (
+    <>
+      <h3 className="fg-section-title">Stakeholder Information</h3>
+      <FigmaField label="First Name">
+        <FigmaInput placeholder="Enter First Name" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Middle Name">
+        <FigmaInput placeholder="Enter Middle Name" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Last Name">
+        <FigmaInput placeholder="Enter Last Name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Stakeholder Type">
+        <FigmaSelect value={form.stakeholderType} onChange={(e) => set("stakeholderType", e.target.value)}>
+          {opts(["", "Shareholder", "Beneficial Owner", "Trustee", "Partner", "Other"])}
+        </FigmaSelect>
+      </FigmaField>
+      <FigmaField label="% Holding">
+        <FigmaInput placeholder="Enter %" value={form.percentageHolding} onChange={(e) => set("percentageHolding", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Mobile Number">
+        <FigmaInput placeholder="Enter Number" value={form.mobileNumber} onChange={(e) => set("mobileNumber", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Email">
+        <FigmaInput placeholder="Enter Email" value={form.email} onChange={(e) => set("email", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="NIN">
+        <FigmaInput placeholder="Enter NIN" value={form.nin} onChange={(e) => set("nin", e.target.value)} maxLength={11} />
+      </FigmaField>
+    </>
+  );
+}
+
+export type SignatoryRecord = {
+  id: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  role: string;
+  mobileNumber: string;
+  bvn: string;
+  email: string;
+  signatoryClass: string;
+};
+
+const SIGNATORIES_STORAGE_KEY = "bank247.corporate.signatories";
+
+function emptySignatory(): Omit<SignatoryRecord, "id"> {
+  return {
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    role: "",
+    mobileNumber: "",
+    bvn: "",
+    email: "",
+    signatoryClass: "",
+  };
+}
+
+function loadSignatories(): SignatoryRecord[] {
+  try {
+    const raw = sessionStorage.getItem(SIGNATORIES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as SignatoryRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSignatories(rows: SignatoryRecord[]) {
+  sessionStorage.setItem(SIGNATORIES_STORAGE_KEY, JSON.stringify(rows));
+}
+
+function SignatoryFormFields({
+  form,
+  set,
+}: {
+  form: Omit<SignatoryRecord, "id">;
+  set: (k: keyof Omit<SignatoryRecord, "id">, v: string) => void;
+}) {
+  return (
+    <>
+      <h3 className="fg-section-title">Signatory Information</h3>
+      <FigmaField label="First Name">
+        <FigmaInput placeholder="Enter First Name" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Middle Name">
+        <FigmaInput placeholder="Enter Middle Name" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Last Name">
+        <FigmaInput placeholder="Enter Last Name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Role">
+        <FigmaInput placeholder="Enter Role" value={form.role} onChange={(e) => set("role", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="Signatory Class">
+        <FigmaSelect value={form.signatoryClass} onChange={(e) => set("signatoryClass", e.target.value)}>
+          {opts(["", "A", "B", "C", "Sole"])}
+        </FigmaSelect>
+      </FigmaField>
+      <FigmaField label="Mobile Number">
+        <FigmaInput placeholder="Enter Number" value={form.mobileNumber} onChange={(e) => set("mobileNumber", e.target.value)} />
+      </FigmaField>
+      <FigmaField label="BVN">
+        <FigmaInput placeholder="Enter BVN" value={form.bvn} onChange={(e) => set("bvn", e.target.value)} maxLength={11} />
+      </FigmaField>
+      <FigmaField label="Email">
+        <FigmaInput placeholder="Enter Email" value={form.email} onChange={(e) => set("email", e.target.value)} />
+      </FigmaField>
+    </>
+  );
 }
 
 export function AddDirectorPage() {
@@ -283,6 +519,176 @@ export function UpdateDirectorPage() {
   );
 }
 
+export function AddStakeholderPage() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [form, setForm] = useState(emptyStakeholder);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof Omit<StakeholderRecord, "id">, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const back = infoReturnPath(params);
+
+  function submit() {
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setError("First Name and Last Name are required");
+      return;
+    }
+    const rows = loadStakeholders();
+    rows.push({ id: `stk-${Date.now()}`, ...form });
+    saveStakeholders(rows);
+    navigate(back);
+  }
+
+  return (
+    <FigmaCreatePanel
+      title="Add Stakeholder"
+      onClose={() => navigate(back)}
+      onSubmit={submit}
+      submitLabel="Add Stakeholder"
+      clearLabel="Close"
+      error={error}
+    >
+      <StakeholderFormFields form={form} set={set} />
+    </FigmaCreatePanel>
+  );
+}
+
+export function UpdateStakeholderPage() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const id = params.get("id") || "";
+  const [form, setForm] = useState(emptyStakeholder);
+  const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const set = (k: keyof Omit<StakeholderRecord, "id">, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const back = infoReturnPath(params);
+
+  useEffect(() => {
+    const row = loadStakeholders().find((d) => d.id === id);
+    if (!row) {
+      setMissing(true);
+      return;
+    }
+    const { id: _ignored, ...rest } = row;
+    void _ignored;
+    setForm(rest);
+  }, [id]);
+
+  function submit() {
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setError("First Name and Last Name are required");
+      return;
+    }
+    saveStakeholders(loadStakeholders().map((d) => (d.id === id ? { id, ...form } : d)));
+    navigate(back);
+  }
+
+  if (missing) {
+    return (
+      <FigmaCreatePanel title="Update Stakeholder" onClose={() => navigate(back)} hidePrimary clearLabel="Close">
+        <p className="fg-error">Stakeholder not found. Add a stakeholder first.</p>
+      </FigmaCreatePanel>
+    );
+  }
+
+  return (
+    <FigmaCreatePanel
+      title="Update Stakeholder"
+      onClose={() => navigate(back)}
+      onSubmit={submit}
+      submitLabel="Update Stakeholder"
+      clearLabel="Close"
+      error={error}
+    >
+      <StakeholderFormFields form={form} set={set} />
+    </FigmaCreatePanel>
+  );
+}
+
+export function AddSignatoryPage() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [form, setForm] = useState(emptySignatory);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof Omit<SignatoryRecord, "id">, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const back = infoReturnPath(params);
+
+  function submit() {
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setError("First Name and Last Name are required");
+      return;
+    }
+    const rows = loadSignatories();
+    rows.push({ id: `sig-${Date.now()}`, ...form });
+    saveSignatories(rows);
+    navigate(back);
+  }
+
+  return (
+    <FigmaCreatePanel
+      title="Add Signatory"
+      onClose={() => navigate(back)}
+      onSubmit={submit}
+      submitLabel="Add Signatory"
+      clearLabel="Close"
+      error={error}
+    >
+      <SignatoryFormFields form={form} set={set} />
+    </FigmaCreatePanel>
+  );
+}
+
+export function UpdateSignatoryPage() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const id = params.get("id") || "";
+  const [form, setForm] = useState(emptySignatory);
+  const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const set = (k: keyof Omit<SignatoryRecord, "id">, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const back = infoReturnPath(params);
+
+  useEffect(() => {
+    const row = loadSignatories().find((d) => d.id === id);
+    if (!row) {
+      setMissing(true);
+      return;
+    }
+    const { id: _ignored, ...rest } = row;
+    void _ignored;
+    setForm(rest);
+  }, [id]);
+
+  function submit() {
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setError("First Name and Last Name are required");
+      return;
+    }
+    saveSignatories(loadSignatories().map((d) => (d.id === id ? { id, ...form } : d)));
+    navigate(back);
+  }
+
+  if (missing) {
+    return (
+      <FigmaCreatePanel title="Update Signatory" onClose={() => navigate(back)} hidePrimary clearLabel="Close">
+        <p className="fg-error">Signatory not found. Add a signatory first.</p>
+      </FigmaCreatePanel>
+    );
+  }
+
+  return (
+    <FigmaCreatePanel
+      title="Update Signatory"
+      onClose={() => navigate(back)}
+      onSubmit={submit}
+      submitLabel="Update Signatory"
+      clearLabel="Close"
+      error={error}
+    >
+      <SignatoryFormFields form={form} set={set} />
+    </FigmaCreatePanel>
+  );
+}
+
 export function CorporateCustomerCreatePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -303,11 +709,21 @@ export function CorporateCustomerCreatePage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ id: string; cif?: string } | null>(null);
   const [directors, setDirectors] = useState<DirectorRecord[]>(() => loadDirectors());
+  const [stakeholders, setStakeholders] = useState<StakeholderRecord[]>(() => loadStakeholders());
+  const [signatories, setSignatories] = useState<SignatoryRecord[]>(() => loadSignatories());
+  const [cacFile, setCacFile] = useState<File | null>(null);
+  const [taxFile, setTaxFile] = useState<File | null>(null);
+  const [nepaFile, setNepaFile] = useState<File | null>(null);
+  const [signatoryPassports, setSignatoryPassports] = useState<CorpFileRow[]>(() => [newCorpFileRow()]);
+  const [signatorySignatures, setSignatorySignatures] = useState<CorpFileRow[]>(() => [newCorpFileRow()]);
+  const [operatingInstructions, setOperatingInstructions] = useState<string[]>([]);
+  const [customInstruction, setCustomInstruction] = useState("");
   const [form, setForm] = useState<Form>({
     userType: userTypeLabel(variant),
     tin: "",
     tinValidated: "",
     tinValidatedDate: "",
+    customerCategory: "",
     companyName: "",
     incorporationType: variant === "government" ? "GOVERNMENT" : "LIMITED",
     certificateNumber: "",
@@ -332,6 +748,7 @@ export function CorporateCustomerCreatePage() {
     introducer: "",
     pep: "No",
     pepDescription: "",
+    riskRating: "",
     accountOfficerCode: "",
     contactName: "",
     contactRole: "",
@@ -350,9 +767,11 @@ export function CorporateCustomerCreatePage() {
 
   useEffect(() => {
     setDirectors(loadDirectors());
+    setStakeholders(loadStakeholders());
+    setSignatories(loadSignatories());
   }, [params]);
 
-  function directorQuery(extra?: Record<string, string>) {
+  function partyQuery(extra?: Record<string, string>) {
     const q = new URLSearchParams();
     if (variant) q.set("variant", variant);
     if (extra) {
@@ -367,11 +786,46 @@ export function CorporateCustomerCreatePage() {
     setDirectors(next);
   }
 
+  function removeStakeholder(id: string) {
+    const next = loadStakeholders().filter((d) => d.id !== id);
+    saveStakeholders(next);
+    setStakeholders(next);
+  }
+
+  function removeSignatory(id: string) {
+    const next = loadSignatories().filter((d) => d.id !== id);
+    saveSignatories(next);
+    setSignatories(next);
+  }
+
+  function toggleOperatingInstruction(value: string) {
+    setOperatingInstructions((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  }
+
+  function addCustomInstruction() {
+    const v = customInstruction.trim();
+    if (!v) return;
+    setOperatingInstructions((prev) => (prev.includes(v) ? prev : [...prev, v]));
+    setCustomInstruction("");
+  }
+
+  function updateCorpFileRow(
+    setter: Dispatch<SetStateAction<CorpFileRow[]>>,
+    id: string,
+    patch: Partial<CorpFileRow>,
+  ) {
+    setter((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function removeCorpFileRow(setter: Dispatch<SetStateAction<CorpFileRow[]>>, id: string) {
+    setter((rows) => (rows.length <= 1 ? [newCorpFileRow()] : rows.filter((r) => r.id !== id)));
+  }
+
   function onUserTypeChange(value: string) {
     set("userType", value);
-    if (value.startsWith("Individual") && !value.includes("Minor") && !value.includes("Non")) {
-      navigate("/customers/new");
-    } else if (value.includes("Minor")) navigate("/customers/new?variant=minor");
+    if (value === "Individual Customer") navigate("/customers/new");
     else if (value.includes("Government")) navigate("/customers/new/corporate?variant=government");
     else if (value.includes("Internal")) navigate("/customers/new/corporate?variant=internal");
     else navigate("/customers/new/corporate");
@@ -399,7 +853,11 @@ export function CorporateCustomerCreatePage() {
       });
       setSuccess({ id: created.id, cif: created.cifNumber });
       saveDirectors([]);
+      saveStakeholders([]);
+      saveSignatories([]);
       setDirectors([]);
+      setStakeholders([]);
+      setSignatories([]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Create failed");
     } finally {
@@ -421,9 +879,10 @@ export function CorporateCustomerCreatePage() {
     else setStep((s) => s - 1);
   }
 
-  const othersStep = 1;
-  const infoStep = variant === "internal" ? -1 : 2;
-  const cifStep = variant === "internal" ? 2 : 3;
+  const othersStep = steps.findIndex((s) => s.id === "others");
+  const infoStep = steps.findIndex((s) => s.id === "info");
+  const documentsStep = steps.findIndex((s) => s.id === "documents");
+  const cifStep = steps.findIndex((s) => s.id === "cif");
 
   return (
     <>
@@ -435,8 +894,7 @@ export function CorporateCustomerCreatePage() {
               <FigmaField label="Select User Type">
                 <FigmaSelect value={form.userType} onChange={(e) => onUserTypeChange(e.target.value)}>
                   <option>Individual Customer</option>
-                  <option>Minor -Individual Customer</option>
-                  <option>Non - Individual Customer</option>
+                  <option>Corporate</option>
                   <option>Internal Record</option>
                   <option>Government Record</option>
                 </FigmaSelect>
@@ -561,11 +1019,33 @@ export function CorporateCustomerCreatePage() {
                 <FigmaField label="Tax Identification Number (TIN)">
                   <FigmaInput placeholder="Enter TIN" value={form.tin} onChange={(e) => set("tin", e.target.value)} />
                 </FigmaField>
+                <FigmaField label="Customer Category">
+                  <FigmaSelect value={form.customerCategory} onChange={(e) => set("customerCategory", e.target.value)}>
+                    {opts([
+                      "",
+                      "SME",
+                      "Corporate Customer",
+                      "Embassy/High Commission",
+                      "Government/MDA Customer",
+                    ])}
+                  </FigmaSelect>
+                </FigmaField>
               </>
             ) : (
               <>
             <FigmaField label="Tax Identification Number (TIN)">
               <FigmaInput placeholder="Enter TIN" value={form.tin} onChange={(e) => set("tin", e.target.value)} />
+            </FigmaField>
+            <FigmaField label="Customer Category">
+              <FigmaSelect value={form.customerCategory} onChange={(e) => set("customerCategory", e.target.value)}>
+                {opts([
+                  "",
+                  "SME",
+                  "Corporate Customer",
+                  "Embassy/High Commission",
+                  "Government/MDA Customer",
+                ])}
+              </FigmaSelect>
             </FigmaField>
             <FigmaRow>
               <FigmaField label="TIN Validated">
@@ -689,12 +1169,10 @@ export function CorporateCustomerCreatePage() {
               </FigmaField>
             </FigmaRow>
             <FigmaField label="Introducer">
-              <FigmaSelect value={form.introducer} onChange={(e) => set("introducer", e.target.value)}>
-                {opts(["", "Staff referral", "Walk-in", "Campaign"])}
-              </FigmaSelect>
+              <FigmaInput placeholder="Enter code" value={form.introducer} onChange={(e) => set("introducer", e.target.value)} />
             </FigmaField>
             <FigmaField label="Account Officer Code">
-              <FigmaInput placeholder="Enter" value={form.accountOfficerCode} onChange={(e) => set("accountOfficerCode", e.target.value)} />
+              <FigmaInput placeholder="Enter code" value={form.accountOfficerCode} onChange={(e) => set("accountOfficerCode", e.target.value)} />
             </FigmaField>
             {variant !== "government" && variant !== "internal" ? (
               <>
@@ -709,6 +1187,11 @@ export function CorporateCustomerCreatePage() {
                 </FigmaField>
               </>
             ) : null}
+            <FigmaField label="Risk Rating">
+              <FigmaSelect value={form.riskRating} onChange={(e) => set("riskRating", e.target.value)}>
+                {opts(["", "Low", "Medium", "High"])}
+              </FigmaSelect>
+            </FigmaField>
           </>
         ) : null}
 
@@ -737,13 +1220,13 @@ export function CorporateCustomerCreatePage() {
                 <button
                   type="button"
                   className="fg-btn fg-btn-primary cta"
-                  onClick={() => navigate(`/customers/directors/new?${directorQuery()}`)}
+                  onClick={() => navigate(`/customers/directors/new?${partyQuery()}`)}
                 >
                   Add Director
                 </button>
               </div>
               {directors.length === 0 ? (
-                <p className="fg-directors-empty">No directors added yet. Add at least one director for this company.</p>
+                <p className="fg-directors-empty">No directors added yet. Add as many directors as needed.</p>
               ) : (
                 <div className="fg-table-wrap" style={{ marginTop: 12 }}>
                   <table className="fg-table">
@@ -767,7 +1250,7 @@ export function CorporateCustomerCreatePage() {
                                 type="button"
                                 className="fg-btn fg-btn-outline cta"
                                 style={{ minWidth: 0, height: 32, padding: "0 10px", fontSize: 12 }}
-                                onClick={() => navigate(`/customers/directors/update?${directorQuery({ id: d.id })}`)}
+                                onClick={() => navigate(`/customers/directors/update?${partyQuery({ id: d.id })}`)}
                               >
                                 Update
                               </button>
@@ -788,10 +1271,303 @@ export function CorporateCustomerCreatePage() {
                 </div>
               )}
             </div>
+
+            <div className="fg-directors-block">
+              <div className="fg-directors-head">
+                <h3 className="fg-section-title" style={{ margin: 0 }}>
+                  Stakeholders
+                </h3>
+                <button
+                  type="button"
+                  className="fg-btn fg-btn-primary cta"
+                  onClick={() => navigate(`/customers/stakeholders/new?${partyQuery()}`)}
+                >
+                  Add Stakeholder
+                </button>
+              </div>
+              {stakeholders.length === 0 ? (
+                <p className="fg-directors-empty">No stakeholders added yet. Add as many as needed.</p>
+              ) : (
+                <div className="fg-table-wrap" style={{ marginTop: 12 }}>
+                  <table className="fg-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>% Holding</th>
+                        <th aria-label="actions" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stakeholders.map((s) => (
+                        <tr key={s.id}>
+                          <td>{[s.firstName, s.middleName, s.lastName].filter(Boolean).join(" ")}</td>
+                          <td>{s.stakeholderType || "—"}</td>
+                          <td>{s.percentageHolding || "—"}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                              <button
+                                type="button"
+                                className="fg-btn fg-btn-outline cta"
+                                style={{ minWidth: 0, height: 32, padding: "0 10px", fontSize: 12 }}
+                                onClick={() => navigate(`/customers/stakeholders/update?${partyQuery({ id: s.id })}`)}
+                              >
+                                Update
+                              </button>
+                              <button
+                                type="button"
+                                className="fg-btn fg-btn-ghost cta"
+                                style={{ minWidth: 0, height: 32, padding: "0 10px", fontSize: 12, color: "#d92d20" }}
+                                onClick={() => removeStakeholder(s.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="fg-directors-block">
+              <div className="fg-directors-head">
+                <h3 className="fg-section-title" style={{ margin: 0 }}>
+                  Signatories
+                </h3>
+                <button
+                  type="button"
+                  className="fg-btn fg-btn-primary cta"
+                  onClick={() => navigate(`/customers/signatories/new?${partyQuery()}`)}
+                >
+                  Add Signatory
+                </button>
+              </div>
+              {signatories.length === 0 ? (
+                <p className="fg-directors-empty">No signatories added yet. Add as many as needed.</p>
+              ) : (
+                <div className="fg-table-wrap" style={{ marginTop: 12 }}>
+                  <table className="fg-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Class</th>
+                        <th aria-label="actions" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {signatories.map((s) => (
+                        <tr key={s.id}>
+                          <td>{[s.firstName, s.middleName, s.lastName].filter(Boolean).join(" ")}</td>
+                          <td>{s.role || "—"}</td>
+                          <td>{s.signatoryClass || "—"}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                              <button
+                                type="button"
+                                className="fg-btn fg-btn-outline cta"
+                                style={{ minWidth: 0, height: 32, padding: "0 10px", fontSize: 12 }}
+                                onClick={() => navigate(`/customers/signatories/update?${partyQuery({ id: s.id })}`)}
+                              >
+                                Update
+                              </button>
+                              <button
+                                type="button"
+                                className="fg-btn fg-btn-ghost cta"
+                                style={{ minWidth: 0, height: 32, padding: "0 10px", fontSize: 12, color: "#d92d20" }}
+                                onClick={() => removeSignatory(s.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </>
         ) : null}
 
-        {step === cifStep ? (
+        {step === documentsStep && documentsStep >= 0 ? (
+          <>
+            <p className="fg-identity-hint">
+              Capture company and signatory documents now. Additional files can be uploaded later via Accounts ops →
+              Document upload.
+            </p>
+
+            <CorpDocUpload
+              label="Business Registration (CAC)"
+              hint="Upload CAC certificate"
+              fileName={cacFile?.name || ""}
+              onFile={setCacFile}
+            />
+            <CorpDocUpload
+              label="TAX"
+              hint="Upload tax document / TIN certificate"
+              fileName={taxFile?.name || ""}
+              onFile={setTaxFile}
+            />
+            <CorpDocUpload
+              label="NEPA Bill"
+              hint="Upload utility / NEPA bill"
+              fileName={nepaFile?.name || ""}
+              onFile={setNepaFile}
+            />
+
+            <div className="fg-other-docs">
+              <h3 className="fg-other-docs-title">Passports for Signatories</h3>
+              <p className="fg-identity-hint" style={{ marginTop: 0 }}>
+                Add a passport (or ID photo) for each signatory.
+              </p>
+              {signatoryPassports.map((row) => (
+                <div key={row.id} className="fg-other-doc-row">
+                  <FigmaField label="Signatory name / note">
+                    <FigmaInput
+                      placeholder="e.g. John Doe"
+                      value={row.label}
+                      onChange={(e) => updateCorpFileRow(setSignatoryPassports, row.id, { label: e.target.value })}
+                    />
+                  </FigmaField>
+                  <FigmaField label="Passport file">
+                    <label className="fg-other-doc-file cta">
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          updateCorpFileRow(setSignatoryPassports, row.id, {
+                            file,
+                            fileName: file?.name || "",
+                          });
+                        }}
+                      />
+                      <span>{row.fileName || "Choose file"}</span>
+                    </label>
+                  </FigmaField>
+                  <button
+                    type="button"
+                    className="fg-btn fg-btn-ghost cta fg-other-doc-remove"
+                    onClick={() => removeCorpFileRow(setSignatoryPassports, row.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="fg-btn fg-btn-outline cta"
+                onClick={() => setSignatoryPassports((rows) => [...rows, newCorpFileRow()])}
+              >
+                + Add passport
+              </button>
+            </div>
+
+            <div className="fg-other-docs">
+              <h3 className="fg-other-docs-title">Signatures for Signatories</h3>
+              <p className="fg-identity-hint" style={{ marginTop: 0 }}>
+                Add a signature image or scanned signature for each signatory.
+              </p>
+              {signatorySignatures.map((row) => (
+                <div key={row.id} className="fg-other-doc-row">
+                  <FigmaField label="Signatory name / note">
+                    <FigmaInput
+                      placeholder="e.g. John Doe"
+                      value={row.label}
+                      onChange={(e) => updateCorpFileRow(setSignatorySignatures, row.id, { label: e.target.value })}
+                    />
+                  </FigmaField>
+                  <FigmaField label="Signature file">
+                    <label className="fg-other-doc-file cta">
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          updateCorpFileRow(setSignatorySignatures, row.id, {
+                            file,
+                            fileName: file?.name || "",
+                          });
+                        }}
+                      />
+                      <span>{row.fileName || "Choose file"}</span>
+                    </label>
+                  </FigmaField>
+                  <button
+                    type="button"
+                    className="fg-btn fg-btn-ghost cta fg-other-doc-remove"
+                    onClick={() => removeCorpFileRow(setSignatorySignatures, row.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="fg-btn fg-btn-outline cta"
+                onClick={() => setSignatorySignatures((rows) => [...rows, newCorpFileRow()])}
+              >
+                + Add signature
+              </button>
+            </div>
+
+            <div className="fg-other-docs">
+              <h3 className="fg-other-docs-title">Operating Instruction</h3>
+              <div className="fg-instruction-list">
+                {CORP_OPERATING_INSTRUCTION_OPTS.map((opt) => (
+                  <label key={opt} className="fg-instruction-check">
+                    <input
+                      type="checkbox"
+                      checked={operatingInstructions.includes(opt)}
+                      onChange={() => toggleOperatingInstruction(opt)}
+                    />
+                    <span>{opt}</span>
+                  </label>
+                ))}
+              </div>
+              {operatingInstructions.length > 0 ? (
+                <div className="fg-instruction-chips">
+                  {operatingInstructions.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className="fg-instruction-chip cta"
+                      onClick={() => toggleOperatingInstruction(v)}
+                      title="Remove"
+                    >
+                      {v} ×
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="fg-identity-row" style={{ marginTop: 10 }}>
+                <FigmaInput
+                  placeholder="Add custom instruction"
+                  value={customInstruction}
+                  onChange={(e) => setCustomInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomInstruction();
+                    }
+                  }}
+                />
+                <button type="button" className="fg-btn fg-btn-outline cta" onClick={addCustomInstruction}>
+                  Add
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {step === cifStep && cifStep >= 0 ? (
           <>
             <FigmaRow>
               <FigmaField label="CIF Number">
@@ -937,8 +1713,7 @@ export function CustomerTypeSelectPage() {
   const [active, setActive] = useState("Individual Customer");
   const options = [
     { label: "Individual Customer", to: "/customers/new" },
-    { label: "Minor- Individual Customer", to: "/customers/new?variant=minor" },
-    { label: "Non Individual Customer", to: "/customers/new/corporate" },
+    { label: "Corporate", to: "/customers/new/corporate" },
     { label: "Internal Record", to: "/customers/new/corporate?variant=internal" },
     { label: "Government Record", to: "/customers/new/corporate?variant=government" },
   ];
