@@ -346,7 +346,13 @@ export function CustomerCreatePage() {
   function applyIdentity(result: IdentityVerifyResponse) {
     const patch = profileToFormPatch(result.profile, result.source);
     const keys = lockedKeysFromPatch(patch);
-    setForm((f) => ({ ...f, ...patch }));
+    setForm((f) => {
+      const next: Form = { ...f };
+      for (const [k, v] of Object.entries(patch)) {
+        if (typeof v === "string") next[k] = v;
+      }
+      return next;
+    });
     setLockedFields((prev) => {
       const next = new Set(prev);
       for (const k of keys) next.add(k);
